@@ -85,19 +85,24 @@ component displayname="sentry" output="false" accessors="true"{
 	*/
 	private void function parseDSN(required string DSN) {
 		var pattern = "^(?:(\w+):)?\/\/(\w+):(\w+)?@([\w\.-]+)\/(.*)";
-		var result 	= reFind(pattern,arguments.DSN,1,true).match;
-		// remove first position as it is the full string match or blank
-		result.deleteAt(1);
-		// throw error if not the 5 positions expected
-		if (compare(result.len(),5)){
+		var result 	= reFind(pattern,arguments.DSN,1,true);
+		var segments = [];
+
+		for(var i=2; i LTE ArrayLen(result.pos); i++){
+			segments.append(mid(arguments.DSN, result.pos[i], result.len[i]));
+		}		
+
+		if (compare(segments.len(),5)){
 			throw(message="Error parsing DSN");
 		}
+
+
 		// set the properties
 		else {
-			setSentryUrl(result[1] & "://" & result[4]);
-			setPublicKey(result[2]);
-			setPrivateKey(result[3]);
-			setProjectID(result[5]);
+			setSentryUrl(segments[1] & "://" & segments[4]);
+			setPublicKey(segments[2]);
+			setPrivateKey(segments[3]);
+			setProjectID(segments[5]);
 		}
 	}
 
