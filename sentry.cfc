@@ -84,25 +84,35 @@ component displayname="sentry" output="false" accessors="true"{
 	* https://docs.sentry.io/clientdev/overview/#parsing-the-dsn
 	*/
 	private void function parseDSN(required string DSN) {
-		var pattern = "^(?:(\w+):)?\/\/(\w+):(\w+)?@([\w\.-]+)\/(.*)";
+		var pattern = "^(?:(\w+):)?\/\/(\w+)(:(\w+))?@([\w\.-]+)\/(.*)";
+		/*
+			1: proto
+			2: publicKey
+			3: group ":" + secret
+			4: privateKey
+			5: sentryUrl
+			6: projectID
+		*/
 		var result 	= reFind(pattern,arguments.DSN,1,true);
 		var segments = [];
 
-		for(var i=2; i LTE ArrayLen(result.pos); i++){
-			segments.append(mid(arguments.DSN, result.pos[i], result.len[i]));
-		}		
-
-		if (compare(segments.len(),5)){
-			throw(message="Error parsing DSN");
+		for(var i=2; i LTE ArrayLen(result.pos); i++) {
+			if (result.pos[i]) {
+				arrayAppend(segments, mid(arguments.DSN, result.pos[i], result.len[i]));
+			}
 		}
 
-
-		// set the properties
-		else {
-			setSentryUrl(segments[1] & "://" & segments[4]);
+		if (arrayLen(segments) == 6) {
+			setSentryUrl(segments[1] & "://" & segments[5]);
 			setPublicKey(segments[2]);
-			setPrivateKey(segments[3]);
-			setProjectID(segments[5]);
+			setPrivateKey(segments[4]);
+			setProjectID(segments[6]);
+		} else if (arrayLen(segments) == 4) {
+			setSentryUrl(segments[1] & "://" & segments[3]);
+			setPublicKey(segments[2]);
+			setProjectID(segments[4]);
+		} else {
+			throw(message="Error parsing DSN");
 		}
 	}
 
@@ -112,7 +122,7 @@ component displayname="sentry" output="false" accessors="true"{
 	* 	"fatal","error","warning","info","debug"
 	*/
 	private void function validateLevel(required string level) {
-		if(!getLevels().find(arguments.level))
+		if(!arrayFindNoCase(getLevels(), arguments.level))
 			throw(message="Error Type must be one of the following : " & getLevels().toString());
 	}
 
@@ -367,12 +377,7 @@ component displayname="sentry" output="false" accessors="true"{
 		header = "Sentry sentry_version=#getSentryVersion()#, sentry_timestamp=#timeVars.time#, sentry_key=#getPublicKey()#, sentry_secret=#getPrivateKey()#, sentry_client=#getLogger()#/#getVersion()#";
 		// post message
 		if (arguments.useThread){
-			cfthread(
-				action 			= "run",
-				name 			= "sentry-thread-" & createUUID(),
-				header   		= header,
-				jsonCapture 	= jsonCapture
-			){
+			thread action="run" name="sentry-thread-#createUUID()#" header="#header#" jsonCapture="#jsonCapture#" {
 				post(header,jsonCapture);
 			}
 		} else {
@@ -389,15 +394,14 @@ component displayname="sentry" output="false" accessors="true"{
 	) {
 		var http = {};
 		// send to sentry via REST API Call
-		cfhttp(
-			url 	: getSentryUrl() & "/api/store/",
-			method 	: "post",
-			timeout : "2",
-			result 	: "http"
-		){
-			cfhttpparam(type="header",name="X-Sentry-Auth",value=arguments.header);
-			cfhttpparam(type="body",value=arguments.json);
-		}
+		var httpService = new http(
+			url = getSentryUrl() & "/api/store/",
+			method = "post",
+			timeout = "2"
+		);
+		httpService.addParam(name = "X-Sentry-Auth", type = "header", value = arguments.header);
+		httpService.addParam(type = "body", value = arguments.json);
+		http = httpService.send().getPrefix();
 
 		// TODO : Honor Sentry’s HTTP 429 Retry-After header any other errors
 		if (!find("200",http.statuscode)){
