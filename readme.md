@@ -32,7 +32,8 @@ function onApplicationStart(){
         environment : "production|staging|etc",
         publicKey   : "your-public-key",
         privateKey  : "your-private-key",
-        projectID   : "your-project-id"
+        projectID   : "your-project-id",
+        customPost   : function ({ url, method }, authHeader, jsonCapture) {}
     );
 
     return true;

@@ -29,6 +29,7 @@ component displayname="sentry" output="false" accessors="true"{
 	property name="sentryUrl" type="string" default="https://sentry.io";
 	property name="sentryVersion" type="string" default="7";
 	property name="serverName" type="string";
+	property name="customPost";
 
 	/**
 	* @release The release version of the application.
@@ -48,7 +49,8 @@ component displayname="sentry" output="false" accessors="true"{
 		string privateKey,
 		numeric projectID,
 		string sentryUrl,
-		string serverName = cgi.server_name
+		string serverName = cgi.server_name,
+		function customPost
 	) {
 		// set keys via DSN or arguments
 		if (structKeyExists(arguments,"DSN") && len(trim(arguments.DSN))){
@@ -76,6 +78,10 @@ component displayname="sentry" output="false" accessors="true"{
 		// overwrite defaults
 		if ( structKeyExists(arguments,"sentryUrl") && len(trim(arguments.sentryUrl)) )
 			setSentryUrl(arguments.sentryUrl);
+
+		if (structKeyExists(arguments, 'customPost') && isClosure(arguments.customPost)) {
+			setCustomPost(arguments.customPost);
+		}
 	}
 
 	/**
@@ -392,13 +398,21 @@ component displayname="sentry" output="false" accessors="true"{
 		required string header,
 		required string json
 	) {
+		var parameters = {
+			url: getSentryUrl() & "/api/store/",
+			method: "post",
+			timeout: "2"
+		};
+
+		var customPost = getCustomPost();
+		if (!isNull(customPost) && isClosure(customPost)) {
+			customPost(parameters, header, json);
+			return;
+		}
+
 		var http = {};
 		// send to sentry via REST API Call
-		var httpService = new http(
-			url = getSentryUrl() & "/api/store/",
-			method = "post",
-			timeout = "2"
-		);
+		var httpService = new http(argumentCollection = parameters);
 		httpService.addParam(name = "X-Sentry-Auth", type = "header", value = arguments.header);
 		httpService.addParam(type = "body", value = arguments.json);
 		http = httpService.send().getPrefix();
