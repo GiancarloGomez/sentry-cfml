@@ -351,7 +351,7 @@ component displayname="sentry" output="false" accessors="true"{
 		// HTTP interface
 		// https://docs.sentry.io/clientdev/interfaces/http/
 		arguments.captureStruct["sentry.interfaces.Http"] = {
-			"sessions" 		: session,
+			"sessions" 		: (isDefined('session'))?session:{},
 			"url" 			: arguments.path,
 			"method" 		: arguments.cgiVars.request_method,
 			"data" 			: form,
