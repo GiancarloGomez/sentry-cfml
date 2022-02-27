@@ -10,11 +10,11 @@ sentry-cfml been updated to full script with support to instantiate
 and use as a singleton. Also some functions have been rewritten to use either
 new ColdFusion language enhancements or existing functions.
 
-sentry-cfml is for use with ColdFusion 2016 testing on earlier
+sentry-cfml is for use with at least ColdFusion 2016. Testing on earlier
 versions of ColdFusion has not been done.
 
 Sentry SDK Documentation
-https://docs.sentry.io/clientdev/
+https://develop.sentry.dev/sdk/overview/
 
 ## Installation
 To install simply clone or download the sentry.cfc file and place it anywhere in your
@@ -53,14 +53,14 @@ function onError(
 ```
 
 ## Usage
-It is recommended that you review the [Sentry SDK Docs](https://docs.sentry.io/clientdev/attributes/) to understand the attributes and Interfaces that are supported.
+It is recommended that you review the [Sentry SDK Docs](https://develop.sentry.dev/sdk/overview/) to understand the attributes and Interfaces that are supported.
 
 ## Examples
 The following are examples on how to send messages and errors to Sentry. The examples are based on the singleton instance.
 
 ### Passing Messages
 An information Message using a thread to post to Sentry
-including data that is passed into the [User Interface](https://docs.sentry.io/clientdev/interfaces/user/)
+including data that is passed into the [User Interface](https://develop.sentry.dev/sdk/event-payloads/user/)
 ```javascript
 
     application.sentry.captureMessage(
