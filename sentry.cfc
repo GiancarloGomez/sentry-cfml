@@ -188,7 +188,8 @@ component displayname="sentry" output="false" accessors="true"{
 		any additionalData,
 		any cgiVars = cgi,
 		boolean useThread = false,
-		struct userInfo = {}
+		struct userInfo = {},
+		struct tags = {}
 	) {
 		var sentryException 		= {};
 		var sentryExceptionExtra 	= {};
@@ -198,7 +199,6 @@ component displayname="sentry" output="false" accessors="true"{
 		var tagContext 				= arguments.exception.TagContext;
 		var i 						= 1;
 		var st 						= "";
-
 		validateLevel(arguments.level);
 
 		/*
@@ -206,9 +206,14 @@ component displayname="sentry" output="false" accessors="true"{
 		* https://docs.sentry.io/clientdev/attributes/
 		*/
 		sentryException = {
-			"message" 	: arguments.exception.message & " " & arguments.exception.detail,
+			"message" 	: Trim(arguments.exception.message & " " & arguments.exception.detail),
 			"level" 	: arguments.level,
-			"culprit" 	: arguments.exception.message
+			"transaction" 	: Left(cgi.SCRIPT_NAME, 200),
+			"exception" : {
+				"value" : Trim(arguments.exception.message & " " & arguments.exception.detail),
+				"type" 	: arguments.exception.type & " Error",
+				"stacktrace": {	}
+			}
 		};
 
 		if (arguments.showJavaStackTrace){
@@ -218,20 +223,15 @@ component displayname="sentry" output="false" accessors="true"{
 			sentryExceptionExtra["Java StackTrace"] = listToArray(st,chr(10));
 		}
 
-		if (!isNull(arguments.additionalData))
-			sentryExceptionExtra["Additional Data"] = arguments.additionalData;
+		if ( isStruct(arguments.additionalData) && StructCount(arguments.additionalData) > 0 ) {
+			sentryExceptionExtra.append(arguments.additionalData);
+		}
 
 		if (structCount(sentryExceptionExtra))
 			sentryException["extra"] = sentryExceptionExtra;
+		if (structCount(arguments.tags))
+			sentryException["tags"] = arguments.tags;
 
-		/*
-		* EXCEPTION INTERFACE
-		* https://docs.sentry.io/clientdev/interfaces/exception/
-		*/
-		sentryException["sentry.interfaces.Exception"] = {
-			"value" : arguments.exception.message & " " & arguments.exception.detail,
-			"type" 	: arguments.exception.type & " Error"
-		};
 
 		/*
 		* STACKTRACE INTERFACE
@@ -240,52 +240,49 @@ component displayname="sentry" output="false" accessors="true"{
 		if (arguments.oneLineStackTrace)
 			tagContext = [tagContext[1]];
 
-		sentryException["sentry.interfaces.Stacktrace"] = {
-			"frames" : []
-		};
-
-		for (i=1; i <= arrayLen(tagContext); i++) {
-			if (compareNoCase(tagContext[i]["TEMPLATE"],currentTemplate)) {
+		sentryException["exception"]["stacktrace"]["frames"] = tagContext.reverse().map( function( k, v ) {
+			var ret = {
+				"abs_path" 	= k["TEMPLATE"],
+				"filename" 	= Replace(k["TEMPLATE"], ExpandPath("/") ,"/"),
+				"lineno" 	= k["LINE"]
+			};
+			if (compareNoCase(k["TEMPLATE"],currentTemplate)) {
 				fileArray = [];
-				if (fileExists(tagContext[i]["TEMPLATE"])) {
-					file = fileOpen(tagContext[i]["TEMPLATE"], "read");
+				if (fileExists(k["TEMPLATE"])) {
+					file = fileOpen(k["TEMPLATE"], "read");
 					while (!fileIsEOF(file))
 						arrayAppend(fileArray, fileReadLine(file));
 					fileClose(file);
 				}
-				currentTemplate = tagContext[i]["TEMPLATE"];
+				currentTemplate = k["TEMPLATE"];
+			}
+		// The name of the function being called
+			if ( k["ID"] != "??" ) {
+				ret["function"] = k["ID"];
+			} 
+			if ( k["COLUMN"] > 0 ) {
+				ret["colno"] = k["COLUMN"];
 			}
 
-			sentryException["sentry.interfaces.Stacktrace"]["frames"][i] = {
-				"abs_path" 	= tagContext[i]["TEMPLATE"],
-				"filename" 	= tagContext[i]["TEMPLATE"],
-				"lineno" 	= tagContext[i]["LINE"]
-			};
-
-			// The name of the function being called
-			if (i == 1)
-				sentryException["sentry.interfaces.Stacktrace"]["frames"][i]["function"] = "column #tagContext[i]["COLUMN"]#";
-			else
-				sentryException["sentry.interfaces.Stacktrace"]["frames"][i]["function"] = tagContext[i]["ID"];
-
 			// for source code rendering
-			sentryException["sentry.interfaces.Stacktrace"]["frames"][i]["pre_context"] = [];
-			if (tagContext[i]["LINE"]-3 >= 1)
-				sentryException["sentry.interfaces.Stacktrace"]["frames"][i]["pre_context"][1] = fileArray[tagContext[i]["LINE"]-3];
-			if (tagContext[i]["LINE"]-2 >= 1)
-				sentryException["sentry.interfaces.Stacktrace"]["frames"][i]["pre_context"][1] = fileArray[tagContext[i]["LINE"]-2];
-			if (tagContext[i]["LINE"]-1 >= 1)
-				sentryException["sentry.interfaces.Stacktrace"]["frames"][i]["pre_context"][2] = fileArray[tagContext[i]["LINE"]-1];
+			ret["pre_context"] = [];
+			for ( var a = 5; a >= 1; a-- ) {
+				if ( k["LINE"] - a >= 1 ) {
+					ret["pre_context"].append(fileArray[k["LINE"]-a]);
+				}
+			}
 			if (arrayLen(fileArray))
-				sentryException["sentry.interfaces.Stacktrace"]["frames"][i]["context_line"] = fileArray[tagContext[i]["LINE"]];
+				ret["context_line"] = fileArray[k["LINE"]];
 
-			sentryException["sentry.interfaces.Stacktrace"]["frames"][i]["post_context"] = [];
-			if (arrayLen(fileArray) >= tagContext[i]["LINE"]+1)
-				sentryException["sentry.interfaces.Stacktrace"]["frames"][i]["post_context"][1] = fileArray[tagContext[i]["LINE"]+1];
-			if (arrayLen(fileArray) >= tagContext[i]["LINE"]+2)
-				sentryException["sentry.interfaces.Stacktrace"]["frames"][i]["post_context"][2] = fileArray[tagContext[i]["LINE"]+2];
-		}
-
+			ret["post_context"] = [];
+			for ( var a = 1; a <= 5; a++ ) {
+				if (arrayLen(fileArray) >= k["LINE"]+a) {
+					ret["post_context"].append(fileArray[k["LINE"]+a]);
+				}
+			}
+			return ret;
+		});
+		
 		capture(
 			captureStruct 	: sentryException,
 			path 			: arguments.path,
@@ -354,13 +351,16 @@ component displayname="sentry" output="false" accessors="true"{
 			"sessions" 		: isDefined('session') ? session : {},
 			"url" 			: arguments.path,
 			"method" 		: arguments.cgiVars.request_method,
-			"data" 			: form,
 			"query_string" 	: arguments.cgiVars.query_string,
 			"cookies" 		: cookie,
-			"env" 			: arguments.cgiVars,
+			"env" 			: arguments.cgiVars.filter(function (k,v) {
+				return v != "" && k != "http_cookie"
+			}),
 			"headers" 		: httpRequestData.headers
 		};
-
+		if ( StructCount(form) >0 ) {
+			arguments.captureStruct["sentry.interfaces.Http"]["data"] = form;
+		}
 		// encode data
 		jsonCapture = jsonEncode(arguments.captureStruct);
 		// prepare header
@@ -470,7 +470,7 @@ component displayname="sentry" output="false" accessors="true"{
 			dJSONString = createObject("java","java.lang.StringBuffer").init("");
 			arKeys 		= structKeyArray(_data);
 			for (i = 1; i <= arrayLen(arKeys); i++){
-				tempVal = jsonEncode( _data[ arKeys[i] ], arguments.queryFormat, arguments.queryKeyCase, arguments.stringNumbers, arguments.formatDates, arguments.columnListFormat );
+				tempVal = jsonEncode( _data[ arKeys[i] ], arguments.queryFormat, arguments.queryKeyCase, arKeys[i] == "cookies" || arguments.stringNumbers, arguments.formatDates, arguments.columnListFormat );
 
 				if (len(dJSONString.toString()))
 					dJSONString.append(',"' & arKeys[i] & '":' & tempVal);
